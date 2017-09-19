@@ -138,4 +138,99 @@ $OracleBase\oradata\[数据库名字]\
 1.物理组件
   数据库是保存在操作系统的一系列文件
   默认安装情况下，这些文件都在$ORACLE_BASE/oradata文件夹下:
-  
+  oradata/
+    └── orcl [数据库的名字]
+    ├── CONTROL01.CTL
+    ├── CONTROL02.CTL
+    ├── EXAMPLE01.DBF
+    ├── REDO01.LOG
+    ├── REDO02.LOG
+    ├── REDO03.LOG
+    ├── SYSAUX01.DBF
+    ├── SYSTEM01.DBF
+    ├── TEMP01.DBF
+    ├── UNDOTBS01.DBF
+    └── USERS01.DBF
+  从文件角度分析，一个数据库包含下面几类（组件）:
+    1.控制文件(control file)。记录数据库的物理结构和其他信息，如数据库名称、各种文件位置等。多副本。
+      Select * from v$controlfile;
+    2.数据文件(data file)。用来存储数据的文件，会自动扩张。数据以块为单位进行保存。
+      Select name,status,enabled from v$datafile;
+    3.重做日志文件(redo log)。用来记录用户的所有操作，为了备份恢复。一个数据库至少有两个日志组，每个日志组至少有一个成员，成员之间是镜像关系。用户的操作会记录到redo log中，当一个组记录满了，会自动切换到下一组。轮流循环。
+      --需要理解Oracle日志的思路:
+      --它采取了【多个分组，轮流循环写入;每组多成员，互为镜像；保存更多信息，使用归档模式】保证了记录安全性。
+      --在生产环境中，需要日志调整到不同的磁盘中，这样，即使某个文件损坏，或某块磁盘损坏，都可以通过镜像的日志文件对数据进行恢复。
+      --查看redo log 日志组
+       select * from v$log;
+       Select * from v$logfile;
+      --增加/删除 日志组
+       Alter database add logfile ‘d:/sss.rlog’ size 100m;
+       Alter database drop logfile ‘d:/sss.rlog’;
+      --清空日志组
+       Alter database clear logfile group 1;
+       Alter database clear unarchived logfile group 1;
+      --为日志组 增加/删除 成员
+       Alter database add logfile member ‘d:/ssss.log’ to group 1;
+       Alter database drop logfile member ‘d:/ssss.log’;
+      --重命名文件
+      --首先，在文件夹管理器里，将文件改名，比如，改为ssss.redolog 
+      --其次，重启数据库到mount状态，然后执行重命名命令
+       Alter database rename file ‘d:/ssss.log’ to ‘d:/ssss.redolog’;
+      --日志组一般是在写满的时候自动切换。
+      --我们也可以手动切换
+       Alter system switch logfile;
+    4.归档日志文件。是重做日志的补充(redo log 记录的记录是有限的)，可以把写满的redo log 进行备份。
+      --Oracle 的归档模式默认是关闭的
+      --归档模式会占用大量空间
+      --但他们用更多的空间，保存更多的历史记录，保障更大的安全性
+      --查看状态
+       Archive log list;
+      --切换数据库到归档模式
+       Alter database archivelog;
+      --启动
+       Archive log start;
+      --查看状态
+       Archive log list;
+     5.其他文件
+2.逻辑组件
+  Https://docs.oracle.com/cd/B28359_01/server.111/b28318/physical.htm#CNCPT1082
+  从Oracle内部管理数据的角度，可以将Oracle分为4个组件:
+    1.表空间(tablespace)
+      最基本的逻辑结构，是Oracle中进行数据恢复的最小单位，容纳着表、索引等对象
+      数据库是由若干表空间组成的。一个表空间至少对应一个物理文件
+      实际开发中，不建议使用默认表空间。请为自己的业务创建自己的表空间
+     --内置的各种表空间
+     --system/sysaux系统表空间/系统辅助表空间，用来保存系统字典表和其他信息，数据库创建完成会自动生成
+     --users用户表空间，创建新用户时，默认使用的表空间
+     --temp临时表空间
+     --undo回滚表空间
+     --查看表空间信息
+      Select * ffrom v$tablespace;
+     --查看所有表空间跟文件对应关系
+      SELECT FILE_NAME,BLOCKS,TABLESPACE_NAME from dba_data_files;
+     --创建表空间
+      Create tablespace xxx
+        Datafile ‘D:/sss.dbf’
+        Size 50m
+        Autoextend on
+        Next 50m
+        Maxsize 1024m;
+     --创建临时表空间
+      Create temporary tablespace yyy
+        Tempfile ‘D:/ANOTHER_TMP.dbf’
+        Size 5m;
+     --删除表空间
+      Drop tablespace xxx;
+   2.段(Segment)
+      段是对象在数据库中占用的空间
+      包括索引段。数据段等
+      表空间被划分为若干区域，每个区域负责存放不同类型数据，这些区域这就是段
+   3.区(Extend)
+     由连续的数据块组成，由Oracle自动分配管理
+     会自动扩展大小
+   4.块(Block)
+     数据块是Oracle数据库最小的逻辑单元
+     它代表在读写操作的时候，每次处理的数据大小是多少
+     正常情况下，它是操作系统的整数倍，默认是8KB
+     可以通过参数db_block_size控制
+      Show parameters block;
